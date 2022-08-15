@@ -83,7 +83,7 @@ var nillaQuery = (function () {
     }
 
     function isFunction(value) { return type(value) === "function" }
-    
+
     function funcArg(context, arg, idx, payload) {
         return isFunction(arg) ? arg.call(context, idx, payload) : arg;
     }
@@ -252,6 +252,11 @@ var nillaQuery = (function () {
                 }
             }
         },
+        click: function () {
+            return this.each(function () {
+                this.click();
+            });
+        },
         children: function () {
             var children = [];
             this.each(function () {
@@ -307,11 +312,25 @@ var nillaQuery = (function () {
             });
             return this;
         },
+        filter: function (filterFunction) {
+            return new ElementList([].filter.call(this, filterFunction), this.selector)
+        },
         find: function (selector) {
             return this.length ? new ElementList(this.first().querySelectorAll(selector), this.selector) : this;
         },
         first: function () {
-            return this[0];
+            if (this.length) {
+                if (this.length > 1) {
+                    return new ElementList([this[0]], this.selector);
+                } else {
+                    return this[0];
+                }
+            } else {
+                return this;
+            }
+        },
+        focus: function () {
+            this[0].focus();
         },
         hasClass: function (className) {
             return this.length ?
@@ -337,6 +356,29 @@ var nillaQuery = (function () {
                 return this.length ? this.first().innerHTML : '';
             }
         },
+        index: function () {
+            if (this[0] !== undefined) {
+                var children = this[0].parentNode.children;
+                var num = 0;
+                for (var i = 0; i < children.length; i++) {
+                    if (children[i] == this[0]) return num;
+                    if (children[i].nodeType == 1) num++;
+                }
+            }
+
+            return -1;
+        },
+        last: function () {
+            if (this.length) {
+                if (this.length > 1) {
+                    return new ElementList([this[this.length - 1]], this.selector);
+                } else {
+                    return this[0];
+                }
+            } else {
+                return this;
+            }
+        },
         matches: function (selector) {
             var el = this.first(),
                 _matches = (el.matches || el.matchesSelector || el.msMatchesSelector || el.mozMatchesSelector || el.webkitMatchesSelector || el.oMatchesSelector)
@@ -345,6 +387,17 @@ var nillaQuery = (function () {
                 [].some.call(this.parent().find(selector), function (n) {
                     return n === el
                 })
+        },
+        next: function () {
+            return new ElementList(this.map(function (el) {
+                return el.nextElementSibling || (function () {
+                    do {
+                        el = el.nextSibling
+                    }
+                    while (el && el.nodeType !== 1)
+                    return el
+                }())
+            }).filter(function (el) { return el !== null }), this.selector)
         },
         on: function (eventName, eventHandler) {
             this.each(function () {
@@ -358,6 +411,17 @@ var nillaQuery = (function () {
         },
         parent: function () {
             return new ElementList(this.length ? [this.first().parentNode] : [], this.selector);
+        },
+        prev: function () {
+            return new ElementList(this.map(function (el) {
+                return el.previousElementSibling || (function () {
+                    do {
+                        el = el.previousSibling
+                    }
+                    while (el && el.nodeType !== 1)
+                    return el
+                }())
+            }).filter(function (el) { return el !== null }), this.selector)
         },
         prop: function (attribute, value) {
             if (attribute === "checked") {
