@@ -88,6 +88,35 @@ var nillaQuery = (function () {
         return isFunction(arg) ? arg.call(context, idx, payload) : arg;
     }
 
+    function matchOfListenerWithEvent(listener, e) {
+        var matchOfListenerWithEvent = false;
+
+        if (listener === "") {
+            matchOfListenerWithEvent = true;
+        } else if (e.target && listener.indexOf(".") === 0 && (e.target.classList.contains(listener.replace(".", "") || e.target.parentNode.classList.contains(listener.replace(".", ""))))) {
+            matchOfListenerWithEvent = true;
+        } else if (e.target && listener.indexOf("#") === 0 && (listener.replace("#", "").toLowerCase() === e.target.id.toLowerCase() || listener.replace("#", "").toLowerCase() === e.target.parentNode.id.toLowerCase())) {
+            matchOfListenerWithEvent = true;
+        } else if (e.target && (listener.toLowerCase() === e.target.tagName.toLowerCase() || listener.toLowerCase() === e.target.parentNode.tagName.toLowerCase())) {
+            matchOfListenerWithEvent = true;
+        }
+
+        return matchOfListenerWithEvent
+    }
+
+    function getKeyCodeDuringClick(e) {
+        var keyCode = undefined;
+
+        //Detecting ctrl (windows) / meta (mac) key
+        if (e.ctrlKey || e.metaKey) {
+            keyCode = 17;
+        } else if (e.shiftKey) {
+            keyCode = 16;
+        }
+
+        return keyCode;
+    }
+
     function init(selector, context) {
         if (!selector) return new ElementList([]);
         if (typeof selector === 'string') {
@@ -178,11 +207,7 @@ var nillaQuery = (function () {
     }
 
     $.each = function (elements, callback) {
-        var i;
         var key;
-
-        //for (i = 0; i < elements.length; i++)
-        //    if (callback.call(elements[i], i, elements[i]) === false) return elements;
 
         for (key in elements)
             if (callback.call(elements[key], key, elements[key]) === false) return elements
@@ -197,6 +222,12 @@ var nillaQuery = (function () {
         return Object.keys(data).map(function (el) {
             return encodeURIComponent(el) + '=' + encodeURIComponent(data[el])
         }).filter(function (n) { return n !== undefined }).join('&')
+    }
+
+    $.parseHTML = function (str) {
+        var node = document.createElement('div')
+        node.innerHTML = str
+        return node.children
     }
 
     $.fn = {
@@ -368,6 +399,9 @@ var nillaQuery = (function () {
 
             return -1;
         },
+        is: function (nodeName) {
+            return this[0].nodeName.toLowerCase() === nodeName.toLowerCase();
+        },
         last: function () {
             if (this.length) {
                 if (this.length > 1) {
@@ -399,14 +433,36 @@ var nillaQuery = (function () {
                 }())
             }).filter(function (el) { return el !== null }), this.selector)
         },
-        on: function (eventName, eventHandler) {
+        off: function (eventName, eventHandler) {
             this.each(function () {
-                this.addEventListener ?
-                    this.addEventListener(eventName, eventHandler) :
-                    this.attachEvent('on' + eventName, function () {
-                        eventHandler.call(this)
-                    })
+                this.removeEventListener ?
+                    this.removeEventListener(eventName, eventHandler) :
+                    this.detachEvent('on' + eventName, eventHandler)
             })
+            return this
+        },
+        on: function (eventName, listener, eventHandler) {
+            if ($.isFunction(listener)) {
+                eventHandler = listener;
+                listener = "";
+            }
+
+            this.each(function () {
+                if (this.addEventListener) {
+                    this.addEventListener(eventName, function (e) {
+                        if (matchOfListenerWithEvent(listener, e)) {
+                            eventHandler.call(e.target, e, this, getKeyCodeDuringClick(e));
+                        }
+                    });
+                } else {
+                    this.attachEvent('on' + eventName, function (e) {
+                        if (matchOfListenerWithEvent(listener, e)) {
+                            eventHandler.call(e.target, e, this, getKeyCodeDuringClick(e));
+                        }
+                    });
+                }
+            });
+
             return this;
         },
         parent: function () {
