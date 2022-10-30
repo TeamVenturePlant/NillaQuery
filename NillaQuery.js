@@ -57,26 +57,6 @@ var nillaQuery = (function () {
         }
     }
 
-    function isJson(data) {
-        if (data === undefined) {
-            return false;
-        }
-
-        if (data instanceof FormData) {
-            return false;
-        }
-
-        if (typeof data !== 'string')
-            data = JSON.stringify(data);
-
-        try {
-            JSON.parse(data);
-            return true;
-        } catch (e) {
-            return false;
-        }
-    }
-
     function type(obj) {
         return obj === null ? String(obj) :
             class2type[toString.call(obj)] || "object"
@@ -86,6 +66,26 @@ var nillaQuery = (function () {
 
     function funcArg(context, arg, idx, payload) {
         return isFunction(arg) ? arg.call(context, idx, payload) : arg;
+    }
+
+    function handleMobileDoubleTapEvent(listener, eventHandler) {
+        let lastTap = 0;
+        let timeout;
+        return function handleDoubleTap(event) {
+            const currentTime = new Date().getTime();
+            const tapLen = currentTime - lastTap;
+            if (tapLen < 500 && tapLen > 0) {
+                if (matchOfListenerWithEvent(listener, event)) {
+                    eventHandler.call(event.target, event, this, getKeyCodeDuringClick(event));
+                    event.preventDefault();
+                }
+            } else {
+                timeout = setTimeout(() => {
+                    clearTimeout(timeout);
+                }, 500);
+            }
+            lastTap = currentTime;
+        };
     }
 
     function matchOfListenerWithEvent(listener, e) {
@@ -165,14 +165,25 @@ var nillaQuery = (function () {
     }
 
     $.ajax = function (opts) {
-        var request = new XMLHttpRequest();
+        var request; //Firefox/Chrome/IE and legacy IE support, first determine the request type
+        if (window.XMLHttpRequest) {
+            request = new XMLHttpRequest();
+        } else if (window.ActiveXObject) {
+            request = new ActiveXObject("Microsoft.XMLHTTP");
+        } else {
+            alert("Browser does not support XMLHTTP.");
+            return false;
+        }
 
-        request.open(opts.type || 'GET', opts.url, true);
-
+        if (opts.data === undefined) {
+            request.open(opts.type || 'GET', opts.url, opts.async || true);
+        } else {
+            request.open(opts.type || 'POST', opts.url, opts.async || true);
+        }
 
         opts.headers && Object.keys(opts.headers).forEach(function (el) {
             request.setRequestHeader(el, opts.headers[el]);
-        })
+        });
 
         request.onreadystatechange = function () {
             if (this.readyState === 4) {
@@ -183,24 +194,50 @@ var nillaQuery = (function () {
                         opts.success && opts.success.call(this, this.responseText, this.status, this);
                     }
                 } else {
-                    opts.error && opts.error.call(this);
+                    if (opts.error === undefined) {
+                        ajaxStandardErrorHandling(this.responseText, this.status, this);
+                    } else {
+                        if (isJson(this.responseText)) {
+                            opts.error && opts.error.call(this, JSON.parse(this.responseText), this.status, this);
+                        } else {
+                            opts.error && opts.error.call(this, this.responseText, this.status, this);
+                        }
+                    }
                 }
             }
         }
 
-        request.onerror = function (errorMessage) {
-            opts.error && opts.error.call(errorMessage);
+        if ($('input[name="__RequestVerificationToken"]').length) {
+            request.setRequestHeader("XSRF-TOKEN", $('input[name="__RequestVerificationToken"]').val());
         }
 
-        if (!isFormData(opts.data)) {
-            request.setRequestHeader('Content-Type', opts.contentType || 'application/x-www-form-urlencoded; charset=UTF-8');
+        if (opts.beforeSend !== undefined) {
+            if ($.isFunction(opts.beforeSend)) {
+                opts.beforeSend(request);
+            }
         }
 
         if (isJson(opts.data)) {
-            request.send($.param(opts.data) || null);
+            request.setRequestHeader('Content-Type', opts.contentType || 'application/json');
+
+            if (typeof data === 'string') {
+                request.send(opts.data || null);
+            } else {
+                request.send(JSON.stringify(opts.data) || null);
+            }
         }
         else {
+            if (!isFormData(opts.data)) {
+                request.setRequestHeader('Content-Type', opts.contentType || 'application/x-www-form-urlencoded; charset=UTF-8');
+            }
+
             request.send(opts.data || null);
+        }
+
+        if (opts.complete !== undefined) {
+            if ($.isFunction(opts.complete)) {
+                opts.complete(request);
+            }
         }
 
         request = null;
@@ -241,6 +278,68 @@ var nillaQuery = (function () {
             });
             return this
         },
+
+
+        ////$('#sidebar-right-menu').animate({ 'width': '100%', 'right': '0' }, 'normal');
+        //$('#sidebar-right-menu').animate({ 'width': '0px', 'right': '-100%' }, 'slow', function () {
+
+        animate: function (properties, duration, callback) {
+            var controlElement = this;
+
+            //duration(default 400): duration in milliseconds, or a string:
+            //fast(200 ms)
+            //slow(600 ms)
+
+            if (duration === undefined) {
+                duration = 1;
+            }
+            else if (isNumeric(duration)) {
+                duration = duration / 1000;
+            } else {
+                if (duration === "slow") {
+                    duration = 3;
+                } else if (duration === "fast") {
+                    duration = 1;
+                } else {
+                    duration = 2;
+                }
+            }
+
+            setTimeout(function () {
+                controlElement.each(function () {
+                    this.style["-webkit-animation-duration"] = duration + "s";
+                    this.style["animation-duration"] = duration + "s";
+                    this.style["-webkit-animation-fill-mode"] = "both";
+                    this.style["animation-fill-mode"] = "both";
+                });    
+
+                properties && Object.keys(properties).forEach(function (propertyName) {
+                    controlElement.each(function () {
+                        this.style[propertyName] = properties[propertyName];
+                    });
+                });
+                
+            }, 1000);
+
+            
+            
+
+            //.fadeInDown {
+            //    -webkit-animation-name: fadeInDown;
+            //    animation-name: fadeInDown;
+            //}
+            //.animated {
+            //        -webkit-animation-duration: 1s;
+            //        animation-duration: 1s;
+            //        -webkit-animation-fill-mode: both;
+            //        animation-fill-mode: both;
+            //}
+
+            if ($.isFunction(callback)) {
+
+            }
+        },
+
         append: function (el) {
             if (typeof el === 'string') {
                 el = new ElementList($.parseHTML(el), el);
@@ -449,11 +548,21 @@ var nillaQuery = (function () {
 
             this.each(function () {
                 if (this.addEventListener) {
-                    this.addEventListener(eventName, function (e) {
-                        if (matchOfListenerWithEvent(listener, e)) {
-                            eventHandler.call(e.target, e, this, getKeyCodeDuringClick(e));
-                        }
-                    });
+                    if (eventName === "dblclick" || eventName === "doubletap") {
+                        this.addEventListener('touchend', handleMobileDoubleTapEvent(listener, eventHandler));
+
+                        this.addEventListener("dblclick", function (e) {
+                            if (matchOfListenerWithEvent(listener, e)) {
+                                eventHandler.call(e.target, e, this, getKeyCodeDuringClick(e));
+                            }
+                        });
+                    } else {
+                        this.addEventListener(eventName, function (e) {
+                            if (matchOfListenerWithEvent(listener, e)) {
+                                eventHandler.call(e.target, e, this, getKeyCodeDuringClick(e));
+                            }
+                        });
+                    }
                 } else {
                     this.attachEvent('on' + eventName, function (e) {
                         if (matchOfListenerWithEvent(listener, e)) {
@@ -505,12 +614,22 @@ var nillaQuery = (function () {
             }
         },
         removeClass: function (className) {
-            this.each(function () {
-                this.classList ?
-                    DOMTokenList.prototype.remove.apply(this.classList, className.split(' ')) :
-                    this.className = this.className.replace(new RegExp('(^|\\b)' + className.split(' ').join('|') + '(\\b|$)', 'gi'), ' ');
-            })
+            if (className === undefined) {
+                this.each(function () {
+                    this.className = "";
+                })
+            } else {
+                this.each(function () {
+                    this.classList ?
+                        DOMTokenList.prototype.remove.apply(this.classList, className.split(' ')) :
+                        this.className = this.className.replace(new RegExp('(^|\\b)' + className.split(' ').join('|') + '(\\b|$)', 'gi'), ' ');
+                })
+            }             
+            
             return this;
+        },
+        resize: function (fn) {
+            window.addEventListener("resize", fn);            
         },
         serialize: function () {
             return this.find('input[name], textarea[name], button[name], select[name]').map(function (el) {
@@ -527,10 +646,15 @@ var nillaQuery = (function () {
 
             this.find('input[name], textarea[name], button[name], select[name]').map(function (el) {
 
+                var isJsonArray = false;
                 var inputValue = undefined;
                 if (el.type === 'checkbox' || el.type === 'radio') {
                     if (el.checked) {
                         inputValue = el.value;
+
+                        if (el.classList.contains("checkboxlist-checkbox")) {
+                            isJsonArray = true;
+                        }
                     }
                 }
                 else {
@@ -545,7 +669,11 @@ var nillaQuery = (function () {
 
                         jsonData[el.name].push(inputValue);
                     } else {
-                        jsonData[el.name] = inputValue;
+                        if (isJsonArray) {
+                            jsonData[el.name] = [inputValue];
+                        } else {
+                            jsonData[el.name] = inputValue;
+                        }
                     }
                 }
             });
@@ -567,6 +695,13 @@ var nillaQuery = (function () {
             }
             else {
                 return this.length ? this.first().textContent || this.first().innerText : '';
+            }
+        },
+        toggle: function (fn) {
+            if (!!(this[0].offsetWidth || this[0].offsetHeight || this[0].getClientRects().length)) {
+                return this.css("display", "none");
+            } else {
+                return this.css("display", "");
             }
         },
         toggleClass: function (className) {
